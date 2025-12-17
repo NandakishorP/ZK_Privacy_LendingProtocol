@@ -11,6 +11,8 @@ contract StealthVault is IncrementalMerkleTree,Ownable{
 
     using SafeERC20 for IERC20;
 
+    mapping(uint256 collateralTokenId => address) public s_collateralIdToAddress;
+
     // errors
     error StealthVault__CommitmentAlreadyExists();
     error StealthVault__InvalidToken(address token);
@@ -32,9 +34,10 @@ contract StealthVault is IncrementalMerkleTree,Ownable{
     event DepositWithdrawn(address withdrawer,uint256 amount);
 
     // later need to be modified to upgradable
-    constructor(address ethTokenAddress_,uint32 depth_,Poseidon2 hasher_, address repaymentVerifier_) IncrementalMerkleTree(depth_,hasher_) Ownable(msg.sender) {
+    constructor(address ethTokenAddress_,uint32 depth_,Poseidon2 hasher_, address repaymentVerifier_, address collateralTokenAddress) IncrementalMerkleTree(depth_,hasher_) Ownable(msg.sender) {
         i_ethTokenAddress = ethTokenAddress_;
         i_repaymentVerifier = IVerifier(repaymentVerifier_);
+        s_collateralIdToAddress[0] = collateralTokenAddress;
     } 
 
     // need to modify later to accept mulitple tokens
@@ -80,4 +83,8 @@ contract StealthVault is IncrementalMerkleTree,Ownable{
         IERC20(token_).safeTransfer(withdrawAddress,amount);
         emit DepositWithdrawn(withdrawAddress,amount);
     }
+
+    function liquidationCollateralTransfer(uint256 s_collateralTokenId, uint256 amount) external onlyOwner{
+        IERC20(s_collateralIdToAddress[s_collateralTokenId]).safeTransfer(msg.sender,amount);
+    }   
 }

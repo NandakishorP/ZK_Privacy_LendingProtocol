@@ -7,7 +7,11 @@ import {ILpToken} from "./interface/ILpToken.sol";
 import {IncrementalMerkleTree, Poseidon2} from "./IncrementalMerkleTree.sol";
 import {console2} from "forge-std/console2.sol";
 import {IVerifier} from "./interface/IVerifier.sol";
-contract LendingEngine is IncrementalMerkleTree{
+import {
+    AutomationCompatibleInterface
+} from "../lib/chainlink-brownie-contracts/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
+
+contract LendingEngine is IncrementalMerkleTree,AutomationCompatibleInterface{
     // errors
     error LendingEngine__InvalidCollateralToken();
     error LendingEngine__UnknownRoot();
@@ -20,6 +24,8 @@ contract LendingEngine is IncrementalMerkleTree{
     error LendingEngine__InvalidRepayAmount();
     error LendingEngine__AmountShouldBeGreaterThanZero();
     error LendingPoolContract__LpTokenMintFailed();
+    error LendingEngine__LoanAlreadyLiquidated();
+    error LendingEngine__HealthProofVerificationFailed();
 
     // events
 
@@ -54,12 +60,14 @@ contract LendingEngine is IncrementalMerkleTree{
     
     // constant variables
     uint256 public constant MINIMUM_COLLATERIZATION_RATIO = 132;
+    uint256 public constant LIQUIDATION_THRESHOLD = 80;
     uint256 public constant PRECISION = 1e18;
 
     using SafeERC20 for IERC20;
 
     struct Loan {
         uint256 borrowAmount;
+        uint256 tokenId;
         uint256 minimumCollateralUsed;
         uint256 startTime;
         uint256 userBorrowIndex;
@@ -79,6 +87,8 @@ contract LendingEngine is IncrementalMerkleTree{
     uint256 totalSupply;
     uint256 totalBorrowed;
     uint256 totalReserves;
+
+    uint256 public constant PROOF_SUBMISSION_INTERVAL = 180 minutes;
 
 
 
@@ -166,6 +176,7 @@ contract LendingEngine is IncrementalMerkleTree{
             revert LendingEngine__CommitmentAlreadyUsed();
         }
 
+
       
         if(!i_collateralVerifier.verify(proof_,publicInputs)){
             revert LendingEngine__VerificationFailed();
@@ -176,6 +187,7 @@ contract LendingEngine is IncrementalMerkleTree{
         s_loanUpdateTime[nullifierHash_] = block.timestamp;
         loanDetails[nullifierHash_] = Loan({
             borrowAmount: borrowAmount_,
+            tokenId:tokenId_,
             minimumCollateralUsed: minimumCollateralUsed_,
             startTime: block.timestamp,
             userBorrowIndex: s_borrowerIndex[s_borrowToken],
@@ -203,6 +215,9 @@ contract LendingEngine is IncrementalMerkleTree{
             revert LendingEngine__CommitmentAlreadyExists();
         }
         Loan storage loan = loanDetails[nullifierHash_];
+        if(loan.isLiquidated){
+            revert LendingEngine__LoanAlreadyLiquidated();
+        }
         uint256 borrowLoanAmount = loan.borrowAmount;
         if(borrowLoanAmount == 0){
             revert LendingEngine__NoActiveLoanFound();
@@ -210,8 +225,6 @@ contract LendingEngine is IncrementalMerkleTree{
         uint256 scaledLoanAmount = (borrowLoanAmount * s_borrowerIndex[s_borrowToken]) /
             loan.userBorrowIndex;
         // we need to calculate the interest rate
-        console2.log(amount_);
-        console2.log(scaledLoanAmount);
         if(amount_<scaledLoanAmount){
             revert LendingEngine__InvalidRepayAmount();
         }
@@ -222,17 +235,36 @@ contract LendingEngine is IncrementalMerkleTree{
         insertedIndex = _insert(commitment_);
     }
 
+    function verifyCollateralHealth(bytes memory proof, bytes32[] memory publicInputs) external{
+        if(!i_healthVerifier.verify(proof,publicInputs)){
+            revert LendingEngine__HealthProofVerificationFailed();
+        }
+        if(!stealthVault.isKnownRoot(publicInputs[0])){
+            revert LendingEngine__UnknownRoot();
+        }
+        s_loanUpdateTime[publicInputs[1]] = block.timestamp;
+    }
+
+
+
     // pending implemnatation for the price spike
 
-    function checkUpKeep(bytes calldata /* calldata */) external view override returns(bool upkeepNeeded, bytes memory performData){
+    function checkUpkeep(bytes calldata /* calldata */) external view override returns(bool upkeepNeeded, bytes memory performData){
         bytes32[] memory nullifierHashes_ = nullifierHashes;
         for(uint256 i=0;i< nullifierHashes_.length;i++){
-            if(block.timestamp - s_loanUpdateTime[nullifierHashes_[i]]>60*60*3){
+            if(block.timestamp - s_loanUpdateTime[nullifierHashes_[i]]>PROOF_SUBMISSION_INTERVAL && !loanDetails[nullifierHashes[i]].repaid){
                 return (true, abi.encode(nullifierHashes_[i]));
             }
         }
         return (false,"");
     }
+
+    function performUpkeep(bytes calldata performData) external override{
+        (bytes32 nullifierHash_) = abi.decode(performData,(bytes32));
+        loanDetails[nullifierHash_].isLiquidated = true;
+        stealthVault.liquidationCollateralTransfer(s_collateralTokenId,loanDetails[nullifierHash_].minimumCollateralUsed);
+    }
+
 
 
     function _mintLpTokens(

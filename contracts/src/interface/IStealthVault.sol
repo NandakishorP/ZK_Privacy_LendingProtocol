@@ -7,4 +7,5 @@ interface IStealthVault{
         bytes32 commitment_
     ) external returns(uint32);
     function isKnownRoot(bytes32 _root) external view returns (bool);
+    function liquidationCollateralTransfer(uint256 s_collateralTokenId, uint256 amount) external;
 }

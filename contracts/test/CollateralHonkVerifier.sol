@@ -7,3 +7,9 @@ contract CollateralHonkVerifier{
         }
 
 }
+
+contract HealthHonkVerifier{
+        function verify(bytes calldata _proof, bytes32[] calldata _publicInputs) external returns (bool){
+            return true;
+        }
+}
