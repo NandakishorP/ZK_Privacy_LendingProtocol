@@ -7,9 +7,10 @@ import {LendingEngine} from "../src/LendingEngine.sol";
 import {LpToken} from "../src/tokens/LpToken.sol";
 import {RepaymentProofHelper, RepaymentProofParams} from "./RepaymentHelper.sol";
 import {CollateralHonkVerifier} from "./CollateralHonkVerifier.sol";
-import {RepaymentHonkVerifier} from "./RepaymentHonkVerifier.sol";
+import {HonkVerifier as RepaymentHonkVerifier} from "../Verifiers/Verifier_LoanRepayment.sol";
 import {IVerifier} from "../src/interface/IVerifier.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
+import {PriceSnapShot} from "../src/PriceSnapShot.sol";
 contract StealthVaultTestBorrow is Test {
     StealthVault stealthVault;
     Poseidon2 posiedon2;
@@ -86,7 +87,7 @@ contract StealthVaultTestBorrow is Test {
         DepositProofParams memory depositProofParams,
         bytes32[] memory leaves
     ) internal returns (bytes memory proof, bytes32[] memory publicInputs) {
-        string[] memory inputs = new string[](12 + leaves.length);
+        string[] memory inputs = new string[](16 + leaves.length);
         inputs[0] = "npx";
         inputs[1] = "tsx";
         inputs[2] = "js-scripts/generateProof.ts";
@@ -103,8 +104,13 @@ contract StealthVaultTestBorrow is Test {
             depositProofParams.actualCollateralizationRatio
         );
         inputs[11] = vm.toString(depositProofParams.collateralAmount);
+        inputs[12] = vm.toString(depositProofParams.epochCommitment);
+        inputs[13] = vm.toString(depositProofParams.epoch);
+        inputs[14] = vm.toString(depositProofParams.roundId);
+        inputs[15] = vm.toString(depositProofParams.price);
+
         for (uint256 i = 0; i < leaves.length; i++) {
-            inputs[12 + i] = vm.toString(leaves[i]);
+            inputs[16 + i] = vm.toString(leaves[i]);
         }
         bytes memory result = vm.ffi(inputs);
         (proof, publicInputs) = abi.decode(result, (bytes, bytes32[]));
@@ -122,75 +128,7 @@ contract StealthVaultTestBorrow is Test {
         vm.stopPrank();
     }
 
-    // function testBorrow() public {
-    //     (
-    //         bytes32 commitment,
-    //         bytes32 nullifier,
-    //         bytes32 secret
-    //     ) = _getCommitment();
-
-    //     // 2) User deposits collateral (1 ETH)
-    //     vm.startPrank(user);
-    //     ERC20Mock(weth).approve(address(stealthVault), DEPOSIT_AMOUNT);
-    //     stealthVault.deposit(address(weth), DEPOSIT_AMOUNT, commitment);
-    //     vm.stopPrank();
-
-    //     // 3) Setup Merkle tree leaf
-    //     bytes32[] memory leaves = new bytes32[](1);
-    //     leaves[0] = commitment;
-
-    //     // ---------------------------
-    //     // 🔥 Correct Max Borrow Math
-    //     // ---------------------------
-
-    //     // Convert collateral to USD
-    //     uint256 collateralValueUSD = (DEPOSIT_AMOUNT * ETH_PRICE) / 1e18;
-
-    //     // maxBorrow = (collateralValueUSD * 100) / 132
-    //     uint256 maxBorrow = (collateralValueUSD * 100) /
-    //         MINIMUM_COLLATERIZATION_RATIO;
-    //     // ≈ 757 USDT
-
-    //     // Use maxBorrow for test
-    //     uint256 borrowAmount = maxBorrow;
-
-    //     DepositProofParams memory params = DepositProofParams({
-    //         nullifierDeposit: nullifier,
-    //         secretDeposit: secret,
-    //         borrowAmount: borrowAmount,
-    //         assetPrice: ETH_PRICE,
-    //         tokenId: WETH_TOKEN_ID,
-    //         recipient: user,
-    //         minCollateralizationRatio: MINIMUM_COLLATERIZATION_RATIO,
-    //         actualCollateralizationRatio: ACTUAL_COLLATERIZATION_RATIO,
-    //         collateralAmount: DEPOSIT_AMOUNT
-    //     });
-
-    //     // 4) Generate the proof
-    //     (bytes memory proof, bytes32[] memory publicInputs) = _getProof(
-    //         params,
-    //         leaves
-    //     );
-
-    //     // 5) Borrow
-    //     vm.prank(user);
-
-    //     lendingEngine.borrowLoan(
-    //         proof,
-    //         publicInputs[0],
-    //         publicInputs[1],
-    //         borrowAmount,
-    //         ETH_PRICE,
-    //         WETH_TOKEN_ID,
-    //         payable(address(uint160(uint256(publicInputs[6])))),
-    //         publicInputs
-    //     );
-
-    //     // 6) Validate user1 received the borrowed USDT
-    //     uint256 userBalance = ERC20Mock(usdt).balanceOf(user1);
-
-    //     assertEq(userBalance, borrowAmount, "Borrowed amount mismatch");
-    // }
+   
 
     function _getRepaymentCommitment()
         internal
@@ -217,79 +155,76 @@ contract StealthVaultTestBorrow is Test {
         uint256 minCollateralizationRatio;
         uint256 actualCollateralizationRatio;
         uint256 collateralAmount;
+        bytes32 epochCommitment;
+        uint256 epoch;
+        uint64 roundId;
+        uint256 price;
     }
 
     function testRepayment() public {
         // 1. Setup: Deposit collateral and get commitment
         (
-            bytes32 commitmentDeposit,
-            bytes32 nullifierDeposit,
-            bytes32 secretDeposit
-        ) = _setupCollateralDeposit();
+            bytes32 commitment,
+            bytes32 nullifier,
+            bytes32 secret
+        ) = _getCommitment();
 
-        // 2. Borrow loan
-        (
-            uint256 borrowAmount,
-            bytes32[] memory borrowPublicInputs
-        ) = _executeBorrow(commitmentDeposit, nullifierDeposit, secretDeposit);
-
-        // 3. Repay the loan
-        (
-            bytes32 commitmentRepayment,
-            bytes32 nullifierRepayment,
-            bytes32 secretRepayment
-        ) = _executeLoanRepayment(borrowPublicInputs);
-
-        // 4. Withdraw collateral
-        _executeCollateralWithdrawal(
-            nullifierDeposit,
-            secretDeposit,
-            borrowAmount,
-            nullifierRepayment,
-            secretRepayment,
-            commitmentDeposit,
-            commitmentRepayment,
-            borrowPublicInputs
-        );
-    }
-
-    // ========== Helper Functions ==========
-
-    function _setupCollateralDeposit()
-        private
-        returns (bytes32 commitment, bytes32 nullifier, bytes32 secret)
-    {
-        (commitment, nullifier, secret) = _getCommitment();
-
+        // 2) User deposits collateral (1 ETH)
         vm.startPrank(user);
         ERC20Mock(weth).approve(address(stealthVault), DEPOSIT_AMOUNT);
         stealthVault.deposit(address(weth), DEPOSIT_AMOUNT, commitment);
         vm.stopPrank();
-    }
 
-    function _executeBorrow(
-        bytes32 commitmentDeposit,
-        bytes32 nullifierDeposit,
-        bytes32 secretDeposit
-    ) private returns (uint256 borrowAmount, bytes32[] memory publicInputs) {
-        // Setup Merkle tree
-        bytes32[] memory leavesDeposit = new bytes32[](1);
-        leavesDeposit[0] = commitmentDeposit;
+        lendingEngine.callPerformUpKeep();
 
-        // Calculate max borrow amount
-        borrowAmount = _calculateMaxBorrow();
+        // 3) Setup Merkle tree leaf
+        bytes32[] memory leaves = new bytes32[](1);
+        leaves[0] = commitment;
 
-        // Generate proof
-        bytes memory proof;
-        (proof, publicInputs) = _generateBorrowProof(
-            nullifierDeposit,
-            secretDeposit,
-            borrowAmount,
-            leavesDeposit
+        // ---------------------------
+        // 🔥 Correct Max Borrow Math
+        // ---------------------------
+
+        // Convert collateral to USD
+        uint256 collateralValueUSD = (DEPOSIT_AMOUNT * ETH_PRICE) / 1e18;
+
+        // maxBorrow = (collateralValueUSD * 100) / 132
+        uint256 maxBorrow = (collateralValueUSD * 100) /
+            MINIMUM_COLLATERIZATION_RATIO;
+        // ≈ 757 USDT
+
+        // Use maxBorrow for test
+        uint256 borrowAmount = maxBorrow;
+
+        uint256 currentEpoch = lendingEngine.getCurrentEpoch();
+        PriceSnapShot.SnapShot memory snapshot = lendingEngine.getCurrentSnapShot();
+        
+
+        DepositProofParams memory params = DepositProofParams({
+            nullifierDeposit: nullifier,
+            secretDeposit: secret,
+            borrowAmount: borrowAmount,
+            assetPrice: ETH_PRICE,
+            tokenId: WETH_TOKEN_ID,
+            recipient: user,
+            minCollateralizationRatio: MINIMUM_COLLATERIZATION_RATIO,
+            actualCollateralizationRatio: ACTUAL_COLLATERIZATION_RATIO,
+            collateralAmount: DEPOSIT_AMOUNT,
+            epochCommitment: snapshot.commitment,
+            epoch: currentEpoch,
+            roundId: snapshot.roundId,
+            price: snapshot.price
+        });
+
+        // 4) Generate the proof
+        (bytes memory proof, bytes32[] memory publicInputs) = _getProof(
+            params,
+            leaves
         );
 
-        // Execute borrow
+        // 5) Borrow
         vm.prank(user);
+
         lendingEngine.borrowLoan(
             proof,
             publicInputs[0],
@@ -300,33 +235,33 @@ contract StealthVaultTestBorrow is Test {
             payable(address(uint160(uint256(publicInputs[6])))),
             publicInputs
         );
+
+        // 3. Repay the loan
+        (
+            bytes32 commitmentRepayment,
+            bytes32 nullifierRepayment,
+            bytes32 secretRepayment
+        ) = _executeLoanRepayment(publicInputs);
+
+        // 4. Withdraw collateral
+        _executeCollateralWithdrawal(
+            nullifier,
+            secret,
+            borrowAmount,
+            nullifierRepayment,
+            secretRepayment,
+            commitment,
+            commitmentRepayment,
+            publicInputs
+        );
     }
 
-    function _calculateMaxBorrow() private view returns (uint256) {
-        uint256 collateralValueUSD = (DEPOSIT_AMOUNT * ETH_PRICE) / 1e18;
-        return (collateralValueUSD * 100) / MINIMUM_COLLATERIZATION_RATIO;
-    }
+    // ========== Helper Functions ==========
 
-    function _generateBorrowProof(
-        bytes32 nullifierDeposit,
-        bytes32 secretDeposit,
-        uint256 borrowAmount,
-        bytes32[] memory leaves
-    ) private returns (bytes memory proof, bytes32[] memory publicInputs) {
-        DepositProofParams memory depositParams = DepositProofParams({
-            nullifierDeposit: nullifierDeposit,
-            secretDeposit: secretDeposit,
-            borrowAmount: borrowAmount,
-            assetPrice: ETH_PRICE,
-            tokenId: WETH_TOKEN_ID,
-            recipient: user,
-            minCollateralizationRatio: MINIMUM_COLLATERIZATION_RATIO,
-            actualCollateralizationRatio: ACTUAL_COLLATERIZATION_RATIO,
-            collateralAmount: DEPOSIT_AMOUNT
-        });
 
-        return _getProof(depositParams, leaves);
-    }
+    
+
+    
 
     function _executeLoanRepayment(
         bytes32[] memory borrowPublicInputs

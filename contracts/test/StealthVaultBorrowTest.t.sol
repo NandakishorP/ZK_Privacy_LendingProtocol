@@ -8,6 +8,7 @@ import {LpToken} from "../src/tokens/LpToken.sol";
 import {IVerifier} from "../src/interface/IVerifier.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 import {PriceSnapShot} from "../src/PriceSnapShot.sol";
+import {RepaymentProofHelper, RepaymentProofParams} from "./RepaymentHelper.sol";
 import {HonkVerifier as CollateralHonkVerifier} from "../Verifiers/Verifier_CollateralDeposit.sol";
 import {HonkVerifier as HealthHonkVerifier} from "../Verifiers/Verifier_LoanHealth.sol";
 contract StealthVaultTest is Test {
@@ -28,6 +29,7 @@ contract StealthVaultTest is Test {
     uint256 public ACTUAL_COLLATERIZATION_RATIO = 150;
     uint256 public constant LIQUIDATION_THRESHOLD = 80;
     MockV3Aggregator oracle;
+    RepaymentProofHelper repaymentProofHelper;
 
     function setUp() public {
         collateralVerifier = IVerifier(address(new CollateralHonkVerifier()));
@@ -37,6 +39,7 @@ contract StealthVaultTest is Test {
         usdt = new ERC20Mock();
         ERC20Mock(address(weth)).mint(user, DEPOSIT_AMOUNT * 10);
         lpToken = new LpToken();
+        repaymentProofHelper = new RepaymentProofHelper();
         oracle = new MockV3Aggregator(8, int256(ETH_PRICE * 1e8));
         stealthVault = new StealthVault(
             address(weth),
@@ -464,4 +467,9 @@ contract StealthVaultTest is Test {
 
         assertEq(upkeepNeeded2, true);
     }
+
+    
+
+      
+
 }
