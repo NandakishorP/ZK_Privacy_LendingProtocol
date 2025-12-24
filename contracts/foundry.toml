@@ -2,26 +2,14 @@
 src = "src"
 out = "out"
 libs = ["lib"]
-solc = "0.8.24"
-via_ir = true
+solc = "0.8.30"
+via_ir = false
 optimizer = true
-optimizer_runs = 1
-evm_version = "shanghai"
+optimizer_runs = 100
 ffi=true
-[profile.default.optimizer_details]
-peephole = false
-inliner = false
-jumpdestRemover = false
-orderLiterals = false
-deduplicate = false
-cse = false
-constantOptimizer = false
-simpleCounterForLoopUncheckedIncrement = true
-yul = true
+evm_version = "cancun"
 
-[profile.default.optimizer_details.yulDetails]
-stackAllocation = true
-optimizerSteps = "dhfoDgvulfnTUtnIf[xarrscLMcCTUtTOntnfDIulLculVcul[jmul[jul]]culLul]"
+
 
 [rpc_endpoints]
 anvil = "http://127.0.0.1:8545"

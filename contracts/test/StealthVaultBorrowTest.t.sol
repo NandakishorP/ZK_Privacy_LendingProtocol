@@ -5,10 +5,11 @@ import {StealthVault, Poseidon2} from "../src/StealthVault.sol";
 import {ERC20Mock} from "lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import {LendingEngine} from "../src/LendingEngine.sol";
 import {LpToken} from "../src/tokens/LpToken.sol";
-import {CollateralHonkVerifier, HealthHonkVerifier} from "./CollateralHonkVerifier.sol";
 import {IVerifier} from "../src/interface/IVerifier.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 import {PriceSnapShot} from "../src/PriceSnapShot.sol";
+import {HonkVerifier as CollateralHonkVerifier} from "../Verifiers/Verifier_CollateralDeposit.sol";
+import {HonkVerifier as HealthHonkVerifier} from "../Verifiers/Verifier_LoanHealth.sol";
 contract StealthVaultTest is Test {
     StealthVault stealthVault;
     Poseidon2 posiedon2;
