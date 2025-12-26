@@ -29,14 +29,14 @@ contract DeployLendingEngine is Script{
             posiedon2
         );
         address user = 0x70997970C51812dc3A010C7d01b50e0d17dc79C8;
-        CollateralHonkVerifier collateralHonkVerifier = new CollateralHonkVerifier();
-        HealthHonkVerifier healthHonkVerifier = new HealthHonkVerifier();
-        RepaymentHonkVerifier repaymentHonkVerifier = new RepaymentHonkVerifier();
+        address collateralVerifier = 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9;
+        address loanRepaymentVerifier = 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0;
+        address loanHealthVerifier = 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9;
         StealthVault stealthVault = new StealthVault(
             weth,
             16,
             posiedon2,
-            address(repaymentHonkVerifier),
+            loanRepaymentVerifier,
             address(weth)
         );
         ERC20Mock(address(weth)).mint(user, 1e18 * 10);
@@ -45,12 +45,12 @@ contract DeployLendingEngine is Script{
             address(priceSnapShot),
             address(usdt),
             address(lpToken),
-            address(collateralHonkVerifier),
+            collateralVerifier,
             WETH_TOKEN_ID,
             address(stealthVault),
             16,
             posiedon2,
-            address(healthHonkVerifier)
+            loanHealthVerifier
         );
         stealthVault.transferOwnership(address(lendingEngine));
         ERC20Mock(address(usdt)).mint(
@@ -65,3 +65,7 @@ contract DeployLendingEngine is Script{
     } 
 }
 
+
+
+// addreess lendingengine 0x9A676e781A523b5d0C0e43731313A708CB607508
+//   address stealthvault 0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0
